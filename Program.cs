@@ -11,7 +11,9 @@ using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Reports;
 using BenchmarkDotNet.Filters;
 using BenchmarkDotNet.Jobs;
-
+using System.Security.Cryptography.X509Certificates;
+using System.Text;
+using System.Linq;
 public class Speed : IColumn
 {
     static long GetDirectorySize(string folderPath)
@@ -64,6 +66,8 @@ public class Speed : IColumn
 public class CSVScan
 {
 
+    public static string university = "Harvard";
+
     public static string filename = "data/Table_1_Authors_career_2023_pubs_since_1788_wopp_extracted_202408_justnames.csv";
 #pragma warning disable CA1812
     private sealed class Config : ManualConfig
@@ -72,6 +76,65 @@ public class CSVScan
         {
             AddColumn(new Speed());
         }
+    }
+
+    [Benchmark]
+    public List<string> ScanFileRaw()
+    {
+        var matchingLines = new List<string>();
+
+
+        using (FileStream fileStream = new FileStream(filename, FileMode.Open, FileAccess.Read))
+        {
+            // Create a buffer that can hold 4kB at a time
+            // It needs to be much (e.g., 2x or more) larger than the university name
+            byte[] buffer = new byte[4 * 1024];
+            Span<byte> harvardBytes = Encoding.UTF8.GetBytes(university);
+            var tailbytes = harvardBytes.Slice(1);
+            int bytesRead;
+            // Read the file in blocks
+            int offset = 0;
+            while ((bytesRead = fileStream.Read(buffer, offset, buffer.Length - offset)) > 0)
+            {
+                bytesRead += offset;
+                offset = 0;
+                for (int i = 0; i <= bytesRead - harvardBytes.Length;)
+                {
+                    i = Array.IndexOf(buffer, (byte)harvardBytes[0], i, bytesRead - harvardBytes.Length - i);
+                    if (i < 0)
+                    {
+                        break;
+                    }
+                    Span<byte> region = buffer.AsSpan(i + 1, harvardBytes.Length - 1);
+                    if (region.SequenceEqual(tailbytes))
+                    {
+                        var start = i;
+                        var end = i + harvardBytes.Length;
+                        while (start > 0 && buffer[start - 1] != '\n') { start--; }
+                        while (end + 1 < bytesRead && buffer[end + 1] != '\n') { end++; }
+                        string line = Encoding.UTF8.GetString(buffer, start, end - start + 1);
+                        matchingLines.Add(line);
+                        i += harvardBytes.Length;
+                    }
+                    else
+                    {
+                        i++;
+                    }
+                }
+
+                for (int i = bytesRead - harvardBytes.Length + 1; i <= bytesRead; i++)
+                {
+                    Span<byte> region = buffer.AsSpan(i, bytesRead - i);
+                    if (harvardBytes.StartsWith(region))
+                    {
+                        Array.Copy(buffer, i, buffer, 0, region.Length);
+                        offset = region.Length;
+                        break;
+                    }
+                }
+            }
+        }
+        return matchingLines;
     }
 
     [Benchmark]
@@ -87,7 +150,6 @@ public class CSVScan
         }
         return count;
     }
-
     [Benchmark]
     public List<string> ScanCsvHelper()
     {
@@ -105,9 +167,9 @@ public class CSVScan
             while (csv.Read())
             {
                 // Assuming 'inst_name' is in the second column (index 1)
-                if (csv[1].IndexOf("Harvard", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (csv[1].IndexOf(university, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
-                    matchingLines.Add(string.Join(",", csv.Parser.RawRecord));
+                    matchingLines.Add(string.Join(",", csv.Parser.RawRecord).Trim());
                 }
             }
         }
@@ -124,7 +186,7 @@ public class CSVScan
 
         var parser = new SmallestCSV.SmallestCSVParser(sr);
 
-        const bool removeEnclosingQuotes = false;
+        const bool removeEnclosingQuotes = true;
         List<string>? columns = parser.ReadNextRow(removeEnclosingQuotes: removeEnclosingQuotes);
         if (columns == null)
         {
@@ -139,15 +201,14 @@ public class CSVScan
             }
 
             // Assuming 'inst_name' is in the second column (index 1)
-            if (columns[1].IndexOf("Harvard", StringComparison.OrdinalIgnoreCase) >= 0)
+            if (columns[1].IndexOf(university, StringComparison.OrdinalIgnoreCase) >= 0)
             {
-                matchingLines.Add(string.Join(",", columns));
+                matchingLines.Add(string.Join(",", columns).Trim());
             }
         }
         return matchingLines;
 
     }
-
     [Benchmark]
     public List<string> ScanNReco()
     {
@@ -157,14 +218,14 @@ public class CSVScan
             var csvReader = new NReco.Csv.CsvReader(streamRdr, ",");
             while (csvReader.Read())
             {
-                if (csvReader[1].IndexOf("Harvard", StringComparison.OrdinalIgnoreCase) >= 0)
+                if (csvReader[1].IndexOf(university, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     string packed = csvReader[0];
                     for (int i = 1; i < csvReader.FieldsCount; i++)
                     {
                         packed += "," + csvReader[i];
                     }
-                    matchingLines.Add(packed);
+                    matchingLines.Add(packed.Trim());
                 }
             }
         }

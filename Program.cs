@@ -1,19 +1,13 @@
-﻿using BenchmarkDotNet;
-using BenchmarkDotNet.Attributes;
-using BenchmarkDotNet.Running;
-using CsvHelper;
-using CsvHelper.Configuration;
-using System.Globalization;
-using SmallestCSV;
-using NReco.Csv;
+﻿using BenchmarkDotNet.Attributes;
 using BenchmarkDotNet.Columns;
 using BenchmarkDotNet.Configs;
 using BenchmarkDotNet.Reports;
-using BenchmarkDotNet.Filters;
-using BenchmarkDotNet.Jobs;
-using System.Security.Cryptography.X509Certificates;
+using BenchmarkDotNet.Running;
+using CsvHelper.Configuration;
+using nietras.SeparatedValues;
+using System.Globalization;
 using System.Text;
-using System.Linq;
+
 public class Speed : IColumn
 {
     static long GetDirectorySize(string folderPath)
@@ -42,7 +36,7 @@ public class Speed : IColumn
             return "N/A";
         }
         var mean = ourReport.ResultStatistics.Mean;
-        return $"{(length / ourReport.ResultStatistics.Mean):#####.00}";
+        return $"{(length / ourReport.ResultStatistics.Mean),6:F3}";
     }
 
     public string GetValue(Summary summary, BenchmarkCase benchmarkCase, SummaryStyle style) => GetValue(summary, benchmarkCase);
@@ -63,6 +57,8 @@ public class Speed : IColumn
 
 [Config(typeof(Config))]
 
+[MemoryDiagnoser]
+[HideColumns("Gen0", "Gen1", "Gen2")]
 public class CSVScan
 {
 
@@ -76,6 +72,22 @@ public class CSVScan
         {
             AddColumn(new Speed());
         }
+    }
+
+    [Benchmark]
+    public List<string> ScanSep()
+    {
+        var matchingLines = new List<string>();
+        using var reader = Sep.Reader().FromFile(filename);
+        var colIndex = reader.Header.IndexOf("inst_name");
+        foreach (var row in reader)
+        {
+            if (row[colIndex].Span.Contains(university, StringComparison.OrdinalIgnoreCase))
+            {
+                matchingLines.Add(row.Span.ToString());
+            }
+        }
+        return matchingLines;
     }
 
     [Benchmark]
@@ -150,6 +162,7 @@ public class CSVScan
         }
         return count;
     }
+
     [Benchmark]
     public List<string> ScanCsvHelper()
     {
@@ -167,7 +180,7 @@ public class CSVScan
             while (csv.Read())
             {
                 // Assuming 'inst_name' is in the second column (index 1)
-                if (csv[1].IndexOf(university, StringComparison.OrdinalIgnoreCase) >= 0)
+                if (csv[1]?.IndexOf(university, StringComparison.OrdinalIgnoreCase) >= 0)
                 {
                     matchingLines.Add(string.Join(",", csv.Parser.RawRecord).Trim());
                 }
@@ -239,7 +252,7 @@ class Program
 {
     public static void Main(string[] args)
     {
-        var summary = BenchmarkRunner.Run<CSVScan>();
+        var summary = BenchmarkRunner.Run<CSVScan>(args: args);
     }
 
 }

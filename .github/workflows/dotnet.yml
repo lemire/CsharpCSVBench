@@ -1,0 +1,24 @@
+name: .NET
+
+on: [pull_request] # add push later
+
+jobs:
+  build:
+    name: Build and test on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest] # add later:, windows-latest, macos-latest]
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Setup .NET 9.0 (preview)
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 9.0.x
+        dotnet-quality: preview
+    - name: Restore dependencies
+      run: dotnet restore
+    - name: Build
+      run: dotnet build --no-restore
